@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Deep Digger Adventure - 深度挖掘冒险</title>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/src/style.css">
+</head>
+<body class="bg-gray-900 overflow-hidden">
+  <div id="app" class="relative w-screen h-screen">
+    <canvas id="gameCanvas" class="block w-full h-full"></canvas>
+
+    <div id="hud" class="absolute top-0 left-0 right-0 p-4 pointer-events-none hidden">
+      <div class="flex justify-between items-start">
+        <div class="bg-black/70 rounded-lg p-4 space-y-2 border-2 border-yellow-600/50">
+          <div class="text-yellow-400 font-game text-xs mb-2">资源状态</div>
+          
+          <div class="flex items-center gap-2">
+            <span class="text-red-500 text-sm w-12">⛽燃料</span>
+            <div class="w-40 h-4 bg-gray-800 rounded-full overflow-hidden border border-red-900">
+              <div id="fuelBar" class="h-full bg-gradient-to-r from-red-600 to-red-400 transition-all duration-200"></div>
+            </div>
+            <span id="fuelText" class="text-red-400 text-xs w-16 text-right">100/100</span>
+          </div>
+          
+          <div class="flex items-center gap-2">
+            <span class="text-blue-400 text-sm w-12">💨氧气</span>
+            <div class="w-40 h-4 bg-gray-800 rounded-full overflow-hidden border border-blue-900">
+              <div id="oxygenBar" class="h-full bg-gradient-to-r from-blue-600 to-cyan-400 transition-all duration-200"></div>
+            </div>
+            <span id="oxygenText" class="text-blue-400 text-xs w-16 text-right">100/100</span>
+          </div>
+          
+          <div class="flex items-center gap-2">
+            <span class="text-orange-400 text-sm w-12">🌡️温度</span>
+            <div class="w-40 h-4 bg-gray-800 rounded-full overflow-hidden border border-orange-900">
+              <div id="heatBar" class="h-full bg-gradient-to-r from-orange-500 to-yellow-400 transition-all duration-200"></div>
+            </div>
+            <span id="heatText" class="text-orange-400 text-xs w-16 text-right">20/100</span>
+          </div>
+          
+          <div class="flex items-center gap-2">
+            <span class="text-purple-400 text-sm w-12">📦货仓</span>
+            <div class="w-40 h-4 bg-gray-800 rounded-full overflow-hidden border border-purple-900">
+              <div id="cargoBar" class="h-full bg-gradient-to-r from-purple-600 to-pink-400 transition-all duration-200"></div>
+            </div>
+            <span id="cargoText" class="text-purple-400 text-xs w-16 text-right">0/50</span>
+          </div>
+          
+          <div class="flex items-center gap-2">
+            <span class="text-red-600 text-sm w-12">❤️生命</span>
+            <div class="w-40 h-4 bg-gray-800 rounded-full overflow-hidden border border-red-900">
+              <div id="healthBar" class="h-full bg-gradient-to-r from-rose-700 to-rose-500 transition-all duration-200"></div>
+            </div>
+            <span id="healthText" class="text-rose-400 text-xs w-16 text-right">100/100</span>
+          </div>
+        </div>
+
+        <div class="bg-black/70 rounded-lg p-4 space-y-2 border-2 border-green-600/50">
+          <div class="text-green-400 font-game text-xs mb-2">采矿信息</div>
+          <div class="text-yellow-300 text-sm">💰 金币: <span id="goldText">0</span></div>
+          <div class="text-cyan-300 text-sm">📍 深度: <span id="depthText">0</span>m</div>
+          <div id="depthBonus" class="text-emerald-400 text-xs hidden">✨ 深度加成: <span id="depthBonusText">+0%</span></div>
+          <div class="text-gray-300 text-xs mt-2">
+            <div>🪙 金矿: <span id="oreGold">0</span></div>
+            <div>🔩 铁矿: <span id="oreIron">0</span></div>
+            <div>💎 钻石: <span id="oreDiamond">0</span></div>
+            <div>⬛ 煤炭: <span id="oreCoal">0</span></div>
+            <div>💚 祖母绿: <span id="oreEmerald">0</span></div>
+            <div>❤️ 红宝石: <span id="oreRuby">0</span></div>
+          </div>
+        </div>
+
+        <div class="absolute top-4 left-1/2 transform -translate-x-1/2 pointer-events-auto">
+          <button id="teleportBtn" class="bg-gradient-to-r from-purple-700 to-blue-700 hover:from-purple-600 hover:to-blue-600 text-white px-4 py-2 rounded-lg border-2 border-purple-400/50 shadow-lg transition-all flex items-center gap-2">
+            <span class="text-lg">🏠</span>
+            <span class="font-game text-xs">紧急回城</span>
+            <span class="text-yellow-300 text-xs">(T)</span>
+            <span id="teleportCost" class="text-yellow-200 text-xs ml-1">$30</span>
+          </button>
+          <div id="teleportProgressWrap" class="hidden mt-2 bg-black/80 rounded-lg p-3 border-2 border-purple-500">
+            <div class="text-purple-300 text-xs mb-1 text-center font-game">传送中...</div>
+            <div class="w-48 h-3 bg-gray-800 rounded-full overflow-hidden border border-purple-900">
+              <div id="teleportProgressBar" class="h-full bg-gradient-to-r from-purple-600 to-cyan-400 transition-all duration-100"></div>
+            </div>
+            <div class="text-gray-400 text-xs mt-1 text-center">移动或攻击取消</div>
+          </div>
+          <div id="teleportCooldown" class="hidden mt-2 text-center text-xs text-gray-400">
+            冷却中: <span id="teleportCooldownText">5s</span>
+          </div>
+        </div>
+
+        <div id="baseIndicator" class="absolute pointer-events-none hidden">
+          <div class="flex flex-col items-center animate-bounce">
+            <div class="text-3xl drop-shadow-lg">⬆️</div>
+            <div class="text-yellow-300 text-xs font-bold bg-black/60 px-2 py-1 rounded mt-1 whitespace-nowrap">
+              采矿基地
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-black/70 rounded-lg px-4 py-2 border-2 border-gray-600/50">
+        <div class="text-gray-300 text-xs text-center space-x-4">
+          <span>⬆️⬇️⬅️➡️/WASD 移动</span>
+          <span>空格 钻探</span>
+          <span>X 攻击</span>
+          <span>T 紧急回城</span>
+          <span>ESC 商店</span>
+        </div>
+      </div>
+
+      <div id="warningMessage" class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 hidden">
+        <div class="bg-red-900/90 border-4 border-red-500 rounded-lg px-8 py-4 animate-pulse">
+          <span id="warningText" class="text-red-200 font-game text-lg"></span>
+        </div>
+      </div>
+    </div>
+
+    <div id="shopMenu" class="absolute inset-0 bg-black/80 hidden items-center justify-center z-50">
+      <div class="bg-gradient-to-b from-amber-900 to-amber-950 rounded-xl p-8 max-w-4xl w-full mx-4 border-4 border-yellow-600 shadow-2xl">
+        <div class="flex justify-between items-center mb-6">
+          <h2 class="text-3xl text-yellow-400 font-game">采矿基地商店</h2>
+          <div class="text-yellow-300 text-xl">💰 <span id="shopGold">0</span></div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4 mb-6">
+          <div class="bg-black/40 rounded-lg p-4 border border-yellow-800">
+            <h3 class="text-yellow-400 font-bold mb-2 text-lg">📦 出售矿石</h3>
+            <div id="sellArea" class="space-y-2 text-sm">
+            </div>
+            <button id="sellAllBtn" class="mt-3 w-full bg-green-700 hover:bg-green-600 text-white py-2 rounded border-2 border-green-500 transition-all">
+              全部出售
+            </button>
+          </div>
+
+          <div class="bg-black/40 rounded-lg p-4 border border-yellow-800">
+            <h3 class="text-yellow-400 font-bold mb-2 text-lg">⛽ 补给</h3>
+            <div class="space-y-2 text-sm text-gray-300">
+              <div class="flex justify-between">
+                <span>加满燃料</span>
+                <button id="refuelBtn" class="bg-red-700 hover:bg-red-600 text-white px-3 py-1 rounded border border-red-500 text-xs">
+                  $50
+                </button>
+              </div>
+              <div class="flex justify-between">
+                <span>补充氧气</span>
+                <button id="refillOxygenBtn" class="bg-blue-700 hover:bg-blue-600 text-white px-3 py-1 rounded border border-blue-500 text-xs">
+                  $30
+                </button>
+              </div>
+              <div class="flex justify-between">
+                <span>冷却系统</span>
+                <button id="coolBtn" class="bg-cyan-700 hover:bg-cyan-600 text-white px-3 py-1 rounded border border-cyan-500 text-xs">
+                  $20
+                </button>
+              </div>
+              <div class="flex justify-between">
+                <span>维修机身</span>
+                <button id="repairBtn" class="bg-rose-700 hover:bg-rose-600 text-white px-3 py-1 rounded border border-rose-500 text-xs">
+                  $40
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-black/40 rounded-lg p-4 border border-yellow-800 mb-6">
+          <h3 class="text-yellow-400 font-bold mb-3 text-lg">🔧 装备升级</h3>
+          <div class="grid grid-cols-2 gap-3 text-sm" id="upgradeArea">
+          </div>
+        </div>
+
+        <div class="flex justify-center gap-4">
+          <button id="closeShopBtn" class="bg-yellow-700 hover:bg-yellow-600 text-white px-8 py-3 rounded-lg border-2 border-yellow-500 font-bold transition-all">
+            ⬇️ 继续采矿
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div id="startScreen" class="absolute inset-0 bg-gradient-to-b from-sky-600 to-amber-900 flex items-center justify-center z-50">
+      <div class="text-center">
+        <h1 class="text-6xl text-yellow-400 font-game mb-4 drop-shadow-lg animate-pulse">DEEP DIGGER</h1>
+        <h2 class="text-2xl text-yellow-200 mb-12 font-game">深度挖掘冒险</h2>
+        <div class="space-y-4 text-gray-200 mb-12 text-left max-w-md mx-auto bg-black/50 p-6 rounded-lg">
+          <p>🎮 <strong>操作说明:</strong></p>
+          <p class="ml-4">⬆️⬇️⬅️➡️ / WASD - 控制采矿机移动</p>
+          <p class="ml-4">空格键 - 朝向方向钻探</p>
+          <p class="ml-4">X 键 - 发射武器攻击</p>
+          <p class="ml-4">T 键 - 紧急回城传送（消耗金币）</p>
+          <p class="ml-4">ESC 键 - 打开商店（需在地面）</p>
+          <p class="mt-4">⚠️ <strong>注意事项:</strong></p>
+          <p class="ml-4">• 监控燃料、氧气和温度</p>
+          <p class="ml-4">• 燃料/氧气不足时按 T 紧急回城</p>
+          <p class="ml-4">• 深度越深矿石售价加成越高</p>
+          <p class="ml-4">• 毒气方块会释放持续毒气云</p>
+          <p class="ml-4">• 小心不稳定方块引发塌方！</p>
+        </div>
+        <button id="startBtn" class="bg-yellow-500 hover:bg-yellow-400 text-gray-900 px-12 py-4 rounded-lg text-2xl font-game border-4 border-yellow-700 shadow-lg transform hover:scale-105 transition-all">
+          开始游戏
+        </button>
+      </div>
+    </div>
+
+    <div id="gameOverScreen" class="absolute inset-0 bg-black/90 hidden items-center justify-center z-50">
+      <div class="text-center">
+        <h1 class="text-5xl text-red-500 font-game mb-8">游戏结束</h1>
+        <div id="gameOverStats" class="text-gray-300 mb-8 space-y-2 text-lg">
+        </div>
+        <button id="restartBtn" class="bg-yellow-500 hover:bg-yellow-400 text-gray-900 px-8 py-3 rounded-lg text-xl font-game border-4 border-yellow-700 transform hover:scale-105 transition-all">
+          重新开始
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

@@ -1,4 +1,4 @@
-import { TILE_SIZE, WORLD_WIDTH, WORLD_HEIGHT, SURFACE_Y, TILE_TYPES, TILE_COLORS, DEPTH_BONUS_MULTIPLIER } from './constants.js';
+import { TILE_SIZE, WORLD_WIDTH, WORLD_HEIGHT, SURFACE_Y, TILE_TYPES, TILE_COLORS, DEPTH_BONUS_MULTIPLIER, CHARGE_AFTERSHOT_DELAY } from './constants.js';
 import { World } from './world.js';
 import { Player } from './player.js';
 import { EnemyManager } from './enemies.js';
@@ -38,6 +38,11 @@ export class Game {
     this.hazards = new HazardManager();
     this.teleport = new TeleportSystem();
     this.collapseTimer = 0;
+
+    this.audioContext = null;
+    this.chargeOscillator = null;
+    this.chargeGain = null;
+    this.lastChargeSoundLevel = -1;
 
     this.baseBuildingX = Math.floor(WORLD_WIDTH / 2) - 3;
 
@@ -204,6 +209,8 @@ export class Game {
       this.update(dt);
     }
 
+    const chargeProgress = this.player.getChargeProgress(now);
+    
     this.renderer.render(
       dt,
       this.world,
@@ -213,7 +220,8 @@ export class Game {
       this.particles,
       this.baseBuildingX,
       this.hazards,
-      this.teleport
+      this.teleport,
+      chargeProgress
     );
 
     this.ui.updateHUD();
@@ -329,9 +337,89 @@ export class Game {
     }
   }
 
-  handleShooting(dt) {
-    if (!this.input.shoot || this.teleport.isTeleporting()) return;
+  initAudio() {
+    if (!this.audioContext) {
+      this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    return this.audioContext;
+  }
 
+  playSound(frequency, duration, type = 'sine', volume = 0.1) {
+    try {
+      const ctx = this.initAudio();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(frequency, ctx.currentTime);
+      gain.gain.setValueAtTime(volume, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + duration);
+    } catch (e) {
+    }
+  }
+
+  startChargeSound() {
+    try {
+      const ctx = this.initAudio();
+      this.chargeOscillator = ctx.createOscillator();
+      this.chargeGain = ctx.createGain();
+      this.chargeOscillator.type = 'sawtooth';
+      this.chargeOscillator.frequency.setValueAtTime(200, ctx.currentTime);
+      this.chargeGain.gain.setValueAtTime(0, ctx.currentTime);
+      this.chargeOscillator.connect(this.chargeGain);
+      this.chargeGain.connect(ctx.destination);
+      this.chargeOscillator.start(ctx.currentTime);
+      this.lastChargeSoundLevel = -1;
+    } catch (e) {
+    }
+  }
+
+  updateChargeSound(progress) {
+    if (!this.chargeOscillator || !this.chargeGain) return;
+    try {
+      const ctx = this.audioContext;
+      const level = Math.floor(progress * 10);
+      if (level !== this.lastChargeSoundLevel) {
+        this.lastChargeSoundLevel = level;
+        const freq = 200 + progress * 600;
+        const vol = 0.05 + progress * 0.15;
+        this.chargeOscillator.frequency.setValueAtTime(freq, ctx.currentTime);
+        this.chargeGain.gain.setValueAtTime(vol, ctx.currentTime);
+      }
+    } catch (e) {
+    }
+  }
+
+  stopChargeSound(fullCharge = false) {
+    if (this.chargeOscillator) {
+      try {
+        this.chargeGain.gain.setValueAtTime(0.001, this.audioContext.currentTime);
+        this.chargeOscillator.stop(this.audioContext.currentTime + 0.1);
+      } catch (e) {
+      }
+      this.chargeOscillator = null;
+      this.chargeGain = null;
+      this.lastChargeSoundLevel = -1;
+    }
+    if (fullCharge) {
+      this.playSound(800, 0.1, 'sine', 0.2);
+      setTimeout(() => this.playSound(1000, 0.15, 'sine', 0.15), 50);
+    }
+  }
+
+  playShootSound(charged = false) {
+    if (charged) {
+      this.playSound(150, 0.2, 'square', 0.2);
+      setTimeout(() => this.playSound(100, 0.3, 'sawtooth', 0.15), 50);
+    } else {
+      this.playSound(300, 0.08, 'square', 0.1);
+    }
+  }
+
+  handleShooting(dt) {
     const now = performance.now();
     let dirX = 0, dirY = 0;
     switch (this.player.facing) {
@@ -341,17 +429,57 @@ export class Game {
       case 'right': dirX = 1; break;
     }
 
-    const bullet = this.player.shoot(now, dirX, dirY);
-    if (bullet) {
-      this.bullets.push(bullet);
-      this.particles.spawn(
-        this.player.x + dirX * TILE_SIZE * 0.5,
-        this.player.y + dirY * TILE_SIZE * 0.5,
-        '#FFD700',
-        3,
-        2,
-        { gravity: 0, lifeMin: 8, lifeMax: 15 }
-      );
+    if (this.input.shoot && !this.teleport.isTeleporting()) {
+      if (!this.player.charging) {
+        if (this.player.startCharge(now)) {
+          this.startChargeSound();
+        }
+      } else {
+        const progress = this.player.updateCharge(now);
+        this.updateChargeSound(progress);
+        if (progress >= 1 && this.player.chargeFull) {
+          if (!this._fullChargeNotified) {
+            this.stopChargeSound(true);
+            this._fullChargeNotified = true;
+            this.ui.showWarning('⚡ 蓄力已满！', 500, 'text-yellow-300');
+          }
+        }
+      }
+    } else {
+      if (this.player.charging) {
+        const progress = this.player.getChargeProgress(now);
+        if (progress >= 0.2) {
+          const bullet = this.player.releaseCharge(now, dirX, dirY);
+          if (bullet) {
+            this.bullets.push(bullet);
+            this.playShootSound(true);
+            this.renderer.shake(bullet.chargeLevel * 3, 0.2 + bullet.chargeLevel * 0.2);
+            const particleCount = Math.floor(5 + bullet.chargeLevel * 10);
+            for (let i = 0; i < particleCount; i++) {
+              const angle = Math.atan2(dirY, dirX) + (Math.random() - 0.5) * 0.5;
+              const speed = 2 + Math.random() * 3;
+              this.particles.spawn(
+                this.player.x + dirX * TILE_SIZE * 0.5,
+                this.player.y + dirY * TILE_SIZE * 0.5,
+                bullet.chargeLevel >= 1 ? '#00FFFF' : '#FFD700',
+                3 + Math.random() * 3,
+                2 + Math.random() * 2,
+                {
+                  vx: Math.cos(angle) * speed,
+                  vy: Math.sin(angle) * speed,
+                  gravity: 0,
+                  lifeMin: 15,
+                  lifeMax: 25
+                }
+              );
+            }
+          }
+        } else {
+          this.player.cancelCharge();
+        }
+        this.stopChargeSound(false);
+        this._fullChargeNotified = false;
+      }
     }
   }
 
@@ -365,15 +493,25 @@ export class Game {
       const tileX = Math.floor(b.x / TILE_SIZE);
       const tileY = Math.floor(b.y / TILE_SIZE);
       if (this.world.isSolid(tileX, tileY)) {
-        this.particles.spawn(b.x, b.y, '#FFD700', 4, 2, { gravity: 0, lifeMin: 5, lifeMax: 10 });
+        const color = b.charged && b.chargeLevel >= 1 ? '#00FFFF' : '#FFD700';
+        this.particles.spawn(b.x, b.y, color, 4, 2, { gravity: 0, lifeMin: 5, lifeMax: 10 });
         this.bullets.splice(i, 1);
         continue;
       }
 
-      if (this.enemies.checkBulletCollision(b)) {
-        this.particles.spawnCircle(b.x, b.y, '#FF4444', 8, 3);
+      const hitResult = this.enemies.checkBulletCollision(b);
+      if (hitResult.hit) {
+        const hitColor = b.charged && b.chargeLevel >= 1 ? '#00FFFF' : '#FF4444';
+        this.particles.spawnCircle(b.x, b.y, hitColor, 8, 3);
         this.renderer.shake(0.5, 0.1);
-        this.bullets.splice(i, 1);
+        if (b.charged && b.piercing !== undefined) {
+          b.pierced++;
+          if (b.pierced >= b.piercing) {
+            this.bullets.splice(i, 1);
+          }
+        } else {
+          this.bullets.splice(i, 1);
+        }
         continue;
       }
 

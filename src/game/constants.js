@@ -140,6 +140,13 @@ export const UPGRADE_DEFS = {
     description: '提升攻击力和射速',
     maxLevel: 5,
     costs: [350, 800, 2000, 5000, 12000]
+  },
+  charge: {
+    name: '蓄力模块',
+    icon: '⚡',
+    description: '减少蓄力时间，增加穿透弹伤害',
+    maxLevel: 5,
+    costs: [500, 1000, 2500, 6000, 15000]
   }
 };
 
@@ -149,3 +156,14 @@ export const TELEPORT_COST_BASE = 30;
 export const TELEPORT_COST_PER_100M = 20;
 export const TELEPORT_DURATION = 2.5;
 export const TELEPORT_COOLDOWN = 5;
+
+export const CHARGE_BASE_TIME = 1500;
+export const CHARGE_MIN_TIME = 500;
+export const CHARGE_TIME_REDUCTION_PER_LEVEL = 200;
+export const CHARGE_BASE_DAMAGE_MULTIPLIER = 1;
+export const CHARGE_MAX_DAMAGE_MULTIPLIER = 4;
+export const CHARGE_SPEED_PENALTY = 0.5;
+export const CHARGE_AFTERSHOT_DELAY = 400;
+export const CHARGE_PIERCING_BASE = 2;
+export const CHARGE_PIERCING_PER_LEVEL = 1;
+export const CHARGE_PIERCING_MAX = 6;

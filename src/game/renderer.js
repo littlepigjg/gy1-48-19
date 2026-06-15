@@ -42,7 +42,7 @@ export class Renderer {
     return { x: sx, y: sy };
   }
 
-  render(dt, world, player, enemies, bullets, particles, baseBuildingX, hazards = null, teleportSystem = null) {
+  render(dt, world, player, enemies, bullets, particles, baseBuildingX, hazards = null, teleportSystem = null, chargeProgress = 0) {
     if (this.shakeTime > 0) {
       this.shakeTime -= dt;
       if (this.shakeTime <= 0) this.shakeStrength = 0;
@@ -61,6 +61,9 @@ export class Renderer {
     this.renderBullets(bullets);
     this.renderEnemies(enemies);
     this.renderPlayer(player, teleportSystem);
+    if (chargeProgress > 0) {
+      this.renderChargeBar(player, chargeProgress);
+    }
     this.renderDarkness(player);
     this.renderBaseArrow(baseBuildingX, player);
   }
@@ -557,14 +560,50 @@ export class Renderer {
   renderBullets(bullets) {
     for (const b of bullets) {
       const screen = this.worldToScreen(b.x, b.y);
-      this.ctx.fillStyle = '#FFD700';
-      this.ctx.beginPath();
-      this.ctx.arc(screen.x, screen.y, 5, 0, Math.PI * 2);
-      this.ctx.fill();
-      this.ctx.fillStyle = 'rgba(255, 215, 0, 0.5)';
-      this.ctx.beginPath();
-      this.ctx.arc(screen.x - b.vx, screen.y - b.vy, 3, 0, Math.PI * 2);
-      this.ctx.fill();
+      
+      if (b.charged) {
+        const isFullCharge = b.chargeLevel >= 1;
+        const size = 5 + b.chargeLevel * 8;
+        const color = isFullCharge ? '#00FFFF' : '#FFD700';
+        const glowColor = isFullCharge ? 'rgba(0, 255, 255, 0.6)' : 'rgba(255, 215, 0, 0.6)';
+        
+        this.ctx.shadowColor = color;
+        this.ctx.shadowBlur = 10 + b.chargeLevel * 15;
+        
+        this.ctx.fillStyle = glowColor;
+        this.ctx.beginPath();
+        this.ctx.arc(screen.x, screen.y, size + 4, 0, Math.PI * 2);
+        this.ctx.fill();
+        
+        this.ctx.fillStyle = color;
+        this.ctx.beginPath();
+        this.ctx.arc(screen.x, screen.y, size, 0, Math.PI * 2);
+        this.ctx.fill();
+        
+        this.ctx.fillStyle = '#FFFFFF';
+        this.ctx.beginPath();
+        this.ctx.arc(screen.x, screen.y, size * 0.4, 0, Math.PI * 2);
+        this.ctx.fill();
+        
+        this.ctx.shadowBlur = 0;
+        
+        if (isFullCharge && b.piercing !== undefined) {
+          const remaining = b.piercing - (b.pierced || 0);
+          this.ctx.fillStyle = '#FFFFFF';
+          this.ctx.font = 'bold 10px sans-serif';
+          this.ctx.textAlign = 'center';
+          this.ctx.fillText(`${remaining}`, screen.x, screen.y + 4);
+        }
+      } else {
+        this.ctx.fillStyle = '#FFD700';
+        this.ctx.beginPath();
+        this.ctx.arc(screen.x, screen.y, 5, 0, Math.PI * 2);
+        this.ctx.fill();
+        this.ctx.fillStyle = 'rgba(255, 215, 0, 0.5)';
+        this.ctx.beginPath();
+        this.ctx.arc(screen.x - b.vx, screen.y - b.vy, 3, 0, Math.PI * 2);
+        this.ctx.fill();
+      }
     }
   }
 
@@ -598,5 +637,51 @@ export class Renderer {
 
     this.ctx.fillStyle = gradient;
     this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+  }
+
+  renderChargeBar(player, progress) {
+    const screen = this.worldToScreen(player.x, player.y);
+    const barWidth = 60;
+    const barHeight = 8;
+    const barX = screen.x - barWidth / 2;
+    const barY = screen.y - player.height / 2 - 20;
+
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    this.ctx.fillRect(barX - 2, barY - 2, barWidth + 4, barHeight + 4);
+
+    this.ctx.fillStyle = '#333';
+    this.ctx.fillRect(barX, barY, barWidth, barHeight);
+
+    const isFull = progress >= 1;
+    const gradient = this.ctx.createLinearGradient(barX, barY, barX + barWidth, barY);
+    if (isFull) {
+      gradient.addColorStop(0, '#00FFFF');
+      gradient.addColorStop(0.5, '#00FF88');
+      gradient.addColorStop(1, '#00FFFF');
+    } else {
+      gradient.addColorStop(0, '#FF6600');
+      gradient.addColorStop(0.5, '#FFD700');
+      gradient.addColorStop(1, '#FF6600');
+    }
+
+    if (isFull) {
+      this.ctx.shadowColor = '#00FFFF';
+      this.ctx.shadowBlur = 10 + Math.sin(Date.now() * 0.01) * 5;
+    }
+
+    this.ctx.fillStyle = gradient;
+    this.ctx.fillRect(barX, barY, barWidth * progress, barHeight);
+    this.ctx.shadowBlur = 0;
+
+    this.ctx.strokeStyle = isFull ? '#00FFFF' : '#FFD700';
+    this.ctx.lineWidth = 2;
+    this.ctx.strokeRect(barX, barY, barWidth, barHeight);
+
+    if (isFull) {
+      this.ctx.fillStyle = '#00FFFF';
+      this.ctx.font = 'bold 10px sans-serif';
+      this.ctx.textAlign = 'center';
+      this.ctx.fillText('⚡', screen.x, barY - 5);
+    }
   }
 }

@@ -1,4 +1,4 @@
-import { TILE_SIZE, WORLD_WIDTH, SURFACE_Y, UPGRADE_DEFS, TILE_TYPES } from './constants.js';
+import { TILE_SIZE, WORLD_WIDTH, SURFACE_Y, UPGRADE_DEFS, TILE_TYPES, CHARGE_BASE_TIME, CHARGE_MIN_TIME, CHARGE_TIME_REDUCTION_PER_LEVEL, CHARGE_BASE_DAMAGE_MULTIPLIER, CHARGE_MAX_DAMAGE_MULTIPLIER, CHARGE_SPEED_PENALTY, CHARGE_AFTERSHOT_DELAY, CHARGE_PIERCING_BASE, CHARGE_PIERCING_PER_LEVEL, CHARGE_PIERCING_MAX } from './constants.js';
 
 export class Player {
   constructor(startX, startY) {
@@ -21,7 +21,8 @@ export class Player {
       oxygen_tank: 0,
       cooling: 0,
       armor: 0,
-      weapon: 0
+      weapon: 0,
+      charge: 0
     };
 
     this.maxFuel = 100 + this.upgrades.fuel_tank * 40;
@@ -45,6 +46,13 @@ export class Player {
     this.weaponDamage = 10 + this.upgrades.weapon * 8;
     this.weaponCooldown = Math.max(150, 500 - this.upgrades.weapon * 70);
     this.lastShot = 0;
+
+    this.charging = false;
+    this.chargeStartTime = 0;
+    this.chargeFull = false;
+    this.chargeAfterShot = 0;
+    this.chargeTime = CHARGE_BASE_TIME;
+    this.chargePiercing = CHARGE_PIERCING_BASE;
 
     this.gold = 0;
     this.cargo = {
@@ -81,6 +89,8 @@ export class Player {
     this.damageReduction = this.upgrades.armor * 0.1;
     this.weaponDamage = 10 + this.upgrades.weapon * 8;
     this.weaponCooldown = Math.max(150, 500 - this.upgrades.weapon * 70);
+    this.chargeTime = Math.max(CHARGE_MIN_TIME, CHARGE_BASE_TIME - this.upgrades.charge * CHARGE_TIME_REDUCTION_PER_LEVEL);
+    this.chargePiercing = Math.min(CHARGE_PIERCING_MAX, CHARGE_PIERCING_BASE + this.upgrades.charge * CHARGE_PIERCING_PER_LEVEL);
 
     this.fuel += (this.maxFuel - oldMaxFuel);
     this.oxygen += (this.maxOxygen - oldMaxOxygen);
@@ -174,12 +184,79 @@ export class Player {
     };
   }
 
+  startCharge(now) {
+    if (this.charging || this.chargeAfterShot > 0) return false;
+    if (!this.canShoot(now)) return false;
+    this.charging = true;
+    this.chargeStartTime = now;
+    this.chargeFull = false;
+    return true;
+  }
+
+  updateCharge(now) {
+    if (!this.charging) return 0;
+    const elapsed = now - this.chargeStartTime;
+    const progress = Math.min(1, elapsed / this.chargeTime);
+    if (progress >= 1 && !this.chargeFull) {
+      this.chargeFull = true;
+    }
+    return progress;
+  }
+
+  getChargeProgress(now) {
+    if (!this.charging) return 0;
+    const elapsed = now - this.chargeStartTime;
+    return Math.min(1, elapsed / this.chargeTime);
+  }
+
+  releaseCharge(now, dirX, dirY) {
+    if (!this.charging) return null;
+    const progress = this.getChargeProgress(now);
+    this.charging = false;
+    if (progress < 0.2) {
+      return null;
+    }
+    const damageMultiplier = CHARGE_BASE_DAMAGE_MULTIPLIER + (CHARGE_MAX_DAMAGE_MULTIPLIER - CHARGE_BASE_DAMAGE_MULTIPLIER) * progress;
+    const damage = this.weaponDamage * damageMultiplier;
+    const piercing = progress >= 1 ? this.chargePiercing : Math.max(1, Math.floor(this.chargePiercing * 0.5));
+    this.lastShot = now;
+    this.chargeAfterShot = CHARGE_AFTERSHOT_DELAY;
+    return {
+      x: this.x,
+      y: this.y,
+      vx: dirX * 12,
+      vy: dirY * 12,
+      damage: damage,
+      life: 90,
+      piercing: piercing,
+      pierced: 0,
+      charged: true,
+      chargeLevel: progress
+    };
+  }
+
+  cancelCharge() {
+    this.charging = false;
+    this.chargeFull = false;
+  }
+
+  getEffectiveSpeed() {
+    if (this.charging) {
+      return this.speed * (1 - CHARGE_SPEED_PENALTY);
+    }
+    return this.speed;
+  }
+
   update(dt, world, input) {
     this.tileX = Math.floor(this.x / TILE_SIZE);
     this.tileY = Math.floor(this.y / TILE_SIZE);
     
     const depth = this.tileY - SURFACE_Y;
     if (depth > this.maxDepth) this.maxDepth = depth;
+
+    if (this.chargeAfterShot > 0) {
+      this.chargeAfterShot -= dt * 1000;
+    }
 
     let moveX = 0, moveY = 0;
     if (input.left) moveX -= 1;
@@ -201,7 +278,8 @@ export class Player {
       }
     }
 
-    const moveSpeed = this.speed * dt * 60;
+    const effectiveSpeed = this.getEffectiveSpeed();
+    const moveSpeed = effectiveSpeed * dt * 60;
     const newX = this.x + moveX * moveSpeed;
     const newY = this.y + moveY * moveSpeed;
 

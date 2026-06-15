@@ -177,16 +177,23 @@ export class EnemyManager {
 
   checkBulletCollision(bullet) {
     for (const e of this.enemies) {
+      if (bullet.hitEnemies && bullet.hitEnemies.has(e)) continue;
       const dx = bullet.x - e.x;
       const dy = bullet.y - e.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
       if (dist < e.width * 0.6) {
         e.health -= bullet.damage;
         e.damageFlash = 0.2;
-        return true;
+        if (bullet.piercing !== undefined) {
+          if (!bullet.hitEnemies) {
+            bullet.hitEnemies = new Set();
+          }
+          bullet.hitEnemies.add(e);
+        }
+        return { hit: true, enemy: e };
       }
     }
-    return false;
+    return { hit: false };
   }
 
   damageEnemyAt(x, y, radius, damage) {
